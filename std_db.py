@@ -11,7 +11,7 @@ class Student:
         return f"Roll No: {self.roll_no}, Name: {self.name}, Class: {self.student_class}"  
 
 class AttendanceSystem:
-    def __init__(self, host='localhost', port=3306, user='root', password='Ar.Saini@2004', database='attendance_db', charset='utf8mb4'):
+    def __init__(self, host='localhost', port=3306, user='root', password='s', database='attendance_db', charset='utf8mb4'):
         self.db_config = {
             'host': host,
             'port': port,
