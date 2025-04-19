@@ -1,7 +1,7 @@
 from std_db import AttendanceSystem
 
 # Initialize system
-system = AttendanceSystem(user='root', password='Ar.Saini@2004')
+system = AttendanceSystem(user='root', password='pass')
 
 # Connect to database
 conn = system.connect_db()
