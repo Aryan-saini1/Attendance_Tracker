@@ -46,7 +46,7 @@ async function fetchStudents() {
         students.forEach(student => {
             const option = document.createElement('option');
             option.value = student.id;
-            option.textContent = `${student.roll_no} - ${student.name} (${student.class})`;
+            option.textContent = `${student.name} (${student.class})`;
             studentSelect.appendChild(option);
         });
     } catch (error) {
@@ -79,7 +79,7 @@ async function fetchAttendance() {
         attendanceTableBody.innerHTML = '';
         if (records.length === 0) {
             const row = document.createElement('tr');
-            row.innerHTML = '<td colspan="6" class="text-center">No attendance records found</td>';
+            row.innerHTML = '<td colspan="5" class="text-center">No attendance records found</td>';
             attendanceTableBody.appendChild(row);
             return;
         }
@@ -87,13 +87,13 @@ async function fetchAttendance() {
         records.forEach(record => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${record.roll_no}</td>
+                <td>${record.student_id}</td>
                 <td>${record.name}</td>
                 <td>${record.class}</td>
                 <td>${record.date}</td>
                 <td class="status-${record.status.toLowerCase()}">${record.status}</td>
                 <td class="action-buttons">
-                    <button class="btn btn-sm btn-danger" onclick="deleteAttendance(${record.id})">
+                    <button class="btn btn-sm btn-danger" onclick="deleteAttendance(${record.student_id}, '${record.date}')">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -111,18 +111,16 @@ studentForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const studentId = document.getElementById('studentId').value;
-    const rollNo = document.getElementById('rollNo').value;
     const name = document.getElementById('studentName').value;
     const studentClass = document.getElementById('studentClass').value;
     
-    if (!studentId || !rollNo || !name || !studentClass) {
+    if (!studentId || !name || !studentClass) {
         showAlert('Please fill in all fields', 'warning');
         return;
     }
     
     const studentData = {
         id: parseInt(studentId),
-        roll_no: parseInt(rollNo),
         name: name,
         class: studentClass
     };
@@ -199,13 +197,13 @@ attendanceForm.addEventListener('submit', async (e) => {
 });
 
 // Delete attendance record
-async function deleteAttendance(id) {
+async function deleteAttendance(studentId, date) {
     if (!confirm('Are you sure you want to delete this attendance record?')) {
         return;
     }
     
     try {
-        const response = await fetch(`${API_BASE_URL}/attendance/${id}`, {
+        const response = await fetch(`${API_BASE_URL}/attendance/${studentId}/${date}`, {
             method: 'DELETE'
         });
         

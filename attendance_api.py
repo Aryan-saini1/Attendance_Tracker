@@ -23,13 +23,13 @@ def init_system(max_retries=5):
             test_conn = pymysql.connect(
                 host='localhost',
                 user='root',
-                password='pass',
+                password='saini',
                 connect_timeout=5
             )
             test_conn.close()
             
             # Now initialize our system
-            system = AttendanceSystem(user='root', password='pass')
+            system = AttendanceSystem(user='root', password='saini')
             # Test connection
             conn = system.connect_db()
             if conn:
@@ -92,7 +92,7 @@ def list_students():
             
         rows = system.list_students()
         students = [
-            {'id': r['id'], 'roll_no': r['roll_no'], 'name': r['name'], 'class': r['class']} for r in rows
+            {'id': r['id'], 'name': r['name'], 'class': r['class']} for r in rows
         ]
         return jsonify(students)
     except Exception as e:
@@ -109,7 +109,7 @@ def create_student():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
             
-        required_fields = ['id', 'roll_no', 'name', 'class']
+        required_fields = ['id', 'name', 'class']
         for field in required_fields:
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
@@ -117,19 +117,17 @@ def create_student():
         try:
             student_id = int(data['id'])
             student = Student(
-                roll_no=int(data['roll_no']),
                 name=data['name'],
                 student_class=data['class']
             )
         except ValueError:
-            return jsonify({'error': 'ID and roll number must be valid integers'}), 400
+            return jsonify({'error': 'ID must be a valid integer'}), 400
         
         try:
             sid = system.add_student(student, student_id)
             row = system.get_student(sid)
             return jsonify({
                 'id': row['id'],
-                'roll_no': row['roll_no'],
                 'name': row['name'],
                 'class': row['class']
             }), 201
@@ -149,7 +147,6 @@ def read_student(sid):
             return jsonify({'message': 'Student not found'}), 404
         return jsonify({
             'id': row['id'],
-            'roll_no': row['roll_no'],
             'name': row['name'],
             'class': row['class']
         })
@@ -165,7 +162,6 @@ def update_student(sid):
         if not existing:
             return jsonify({'message': 'Student not found'}), 404
         updated = Student(
-            roll_no=data.get('roll_no'),
             name=data.get('name'),
             student_class=data.get('class')
         )
@@ -173,7 +169,6 @@ def update_student(sid):
         row = system.get_student(sid)
         return jsonify({
             'id': row['id'],
-            'roll_no': row['roll_no'],
             'name': row['name'],
             'class': row['class']
         })
@@ -200,7 +195,13 @@ def list_all_attendance():
             
         rows = system.list_all_attendance()
         records = [
-            {'id': r['id'], 'roll_no': r['roll_no'], 'name': r['name'], 'date': str(r['date']), 'status': r['status']}
+            {
+                'student_id': r['student_id'],
+                'name': r['name'],
+                'class': r['class'],
+                'date': str(r['date']),
+                'status': r['status']
+            }
             for r in rows
         ]
         return jsonify(records)
@@ -237,13 +238,12 @@ def mark_attendance():
             if not student:
                 return jsonify({'error': f'Student with ID {student_id} not found'}), 404
                 
-            aid = system.mark_attendance(student_id, at_date, status)
-            if not aid:
+            result = system.mark_attendance(student_id, at_date, status)
+            if not result:
                 return jsonify({'error': 'Failed to mark attendance'}), 500
                 
-            row = system.get_attendance(aid)
+            row = system.get_attendance(student_id, at_date)
             return jsonify({
-                'id': row['id'],
                 'student_id': row['student_id'],
                 'date': str(row['date']),
                 'status': row['status']
@@ -259,18 +259,20 @@ def mark_attendance():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
-@app.route('/attendance/<int:aid>', methods=['GET'])
-def get_attendance(aid):
+@app.route('/attendance/<int:student_id>/<string:date>', methods=['GET'])
+def get_attendance(student_id, date):
     try:
-        row = system.get_attendance(aid)
+        at_date = datetime.strptime(date, '%Y-%m-%d').date()
+        row = system.get_attendance(student_id, at_date)
         if not row:
             return jsonify({'message': 'Attendance record not found'}), 404
         return jsonify({
-            'id': row['id'],
             'student_id': row['student_id'],
             'date': str(row['date']),
             'status': row['status']
         })
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -278,38 +280,43 @@ def get_attendance(aid):
 def list_attendance_for_student(student_id):
     try:
         rows = system.list_attendance_by_student(student_id)
-        records = [{'id': r['id'], 'date': str(r['date']), 'status': r['status']} for r in rows]
+        records = [{'date': str(r['date']), 'status': r['status']} for r in rows]
         return jsonify(records)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/attendance/<int:aid>', methods=['PUT'])
-def update_attendance(aid):
+@app.route('/attendance/<int:student_id>/<string:date>', methods=['PUT'])
+def update_attendance(student_id, date):
     try:
+        at_date = datetime.strptime(date, '%Y-%m-%d').date()
         data = request.get_json()
-        existing = system.get_attendance(aid)
+        existing = system.get_attendance(student_id, at_date)
         if not existing:
             return jsonify({'message': 'Record not found'}), 404
         new_status = data.get('status')
-        system.update_attendance(aid, new_status)
-        row = system.get_attendance(aid)
+        system.update_attendance(student_id, at_date, new_status)
+        row = system.get_attendance(student_id, at_date)
         return jsonify({
-            'id': row['id'],
             'student_id': row['student_id'],
             'date': str(row['date']),
             'status': row['status']
         })
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/attendance/<int:aid>', methods=['DELETE'])
-def delete_attendance(aid):
+@app.route('/attendance/<int:student_id>/<string:date>', methods=['DELETE'])
+def delete_attendance(student_id, date):
     try:
-        existing = system.get_attendance(aid)
+        at_date = datetime.strptime(date, '%Y-%m-%d').date()
+        existing = system.get_attendance(student_id, at_date)
         if not existing:
             return jsonify({'message': 'Record not found'}), 404
-        system.delete_attendance(aid)
-        return jsonify({'message': f'Attendance id={aid} deleted'})
+        system.delete_attendance(student_id, at_date)
+        return jsonify({'message': f'Attendance for student {student_id} on {date} deleted'})
+    except ValueError:
+        return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

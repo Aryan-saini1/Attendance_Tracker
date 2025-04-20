@@ -2,16 +2,15 @@ import pymysql
 from datetime import date
 
 class Student:
-    def __init__(self, roll_no=0, name="", student_class=""):
-        self.roll_no = roll_no
+    def __init__(self, name="", student_class=""):
         self.name = name
         self.student_class = student_class
 
     def __str__(self):
-        return f"Roll No: {self.roll_no}, Name: {self.name}, Class: {self.student_class}"  
+        return f"Name: {self.name}, Class: {self.student_class}"  
 
 class AttendanceSystem:
-    def __init__(self, host='localhost', port=3306, user='root', password='s', database='attendance_db', charset='utf8mb4'):
+    def __init__(self, host='localhost', port=3306, user='root', password='saini', database='attendance_db', charset='utf8mb4'):
         self.db_config = {
             'host': host,
             'port': port,
@@ -61,7 +60,6 @@ class AttendanceSystem:
                 """
                 CREATE TABLE IF NOT EXISTS students (
                     id INT PRIMARY KEY,
-                    roll_no INT UNIQUE NOT NULL,
                     name VARCHAR(100) NOT NULL,
                     class VARCHAR(50) NOT NULL
                 );
@@ -71,11 +69,11 @@ class AttendanceSystem:
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS attendance (
-                    id INT PRIMARY KEY AUTO_INCREMENT,
                     student_id INT NOT NULL,
                     date DATE NOT NULL,
                     status ENUM('Present','Absent') NOT NULL,
-                    FOREIGN KEY (student_id) REFERENCES students(id)
+                    FOREIGN KEY (student_id) REFERENCES students(id),
+                    PRIMARY KEY (student_id, date)
                 );
                 """
             )
@@ -83,6 +81,48 @@ class AttendanceSystem:
             print("Tables 'students' and 'attendance' ensured.")
         except pymysql.MySQLError as err:
             print(f"Error creating tables: {err}")
+            conn.rollback()
+        finally:
+            cursor.close()
+            self.disconnect_db(conn)
+
+    def modify_students_table(self):
+        """Modify the students table to remove the roll_no column"""
+        conn = self.connect_db()
+        if not conn:
+            return
+        try:
+            cursor = conn.cursor()
+            # Drop existing attendance table first (due to foreign key constraint)
+            cursor.execute("DROP TABLE IF EXISTS attendance")
+            # Drop existing students table
+            cursor.execute("DROP TABLE IF EXISTS students")
+            # Create new students table without roll_no column
+            cursor.execute(
+                """
+                CREATE TABLE students (
+                    id INT PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    class VARCHAR(50) NOT NULL
+                );
+                """
+            )
+            # Recreate attendance table
+            cursor.execute(
+                """
+                CREATE TABLE attendance (
+                    student_id INT NOT NULL,
+                    date DATE NOT NULL,
+                    status ENUM('Present','Absent') NOT NULL,
+                    FOREIGN KEY (student_id) REFERENCES students(id),
+                    PRIMARY KEY (student_id, date)
+                );
+                """
+            )
+            conn.commit()
+            print("Students and attendance tables modified successfully")
+        except pymysql.MySQLError as err:
+            print(f"Error modifying students table: {err}")
             conn.rollback()
         finally:
             cursor.close()
@@ -105,21 +145,14 @@ class AttendanceSystem:
             if cursor.fetchone():
                 raise Exception(f"Student with ID {student_id} already exists")
             
-            # Check if roll number already exists
-            cursor.execute("SELECT id FROM students WHERE roll_no = %s", (student.roll_no,))
-            if cursor.fetchone():
-                raise Exception(f"Student with roll number {student.roll_no} already exists")
-            
-            query = "INSERT INTO students (id, roll_no, name, class) VALUES (%s, %s, %s, %s)"
-            cursor.execute(query, (student_id, student.roll_no, student.name, student.student_class))
+            query = "INSERT INTO students (id, name, class) VALUES (%s, %s, %s)"
+            cursor.execute(query, (student_id, student.name, student.student_class))
             conn.commit()
             print(f"Student added with id={student_id}")
             return student_id
         except pymysql.Error as err:
             print(f"Error adding student: {err}")
             conn.rollback()
-            if err.args[0] == 1062:  # Duplicate entry error
-                raise Exception(f"Student with roll number {student.roll_no} already exists")
             raise Exception(f"Database error: {str(err)}")
         finally:
             if cursor:
@@ -129,8 +162,8 @@ class AttendanceSystem:
     def update_student(self, sid, new_data: Student):
         conn = self.connect_db()
         cursor = conn.cursor()
-        query = "UPDATE students SET roll_no=%s, name=%s, class=%s WHERE id=%s"
-        cursor.execute(query, (new_data.roll_no, new_data.name, new_data.student_class, sid))
+        query = "UPDATE students SET name=%s, class=%s WHERE id=%s"
+        cursor.execute(query, (new_data.name, new_data.student_class, sid))
         conn.commit()
         print(f"Student id={sid} updated.")
         cursor.close()
@@ -153,7 +186,7 @@ class AttendanceSystem:
             return None
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, roll_no, name, class FROM students WHERE id=%s", (sid,))
+            cursor.execute("SELECT id, name, class FROM students WHERE id=%s", (sid,))
             row = cursor.fetchone()
             return row
         except pymysql.MySQLError as err:
@@ -169,7 +202,7 @@ class AttendanceSystem:
             return []
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, roll_no, name, class FROM students")
+            cursor.execute("SELECT id, name, class FROM students")
             rows = cursor.fetchall()
             return rows
         except pymysql.MySQLError as err:
@@ -195,7 +228,7 @@ class AttendanceSystem:
             
             # Check if attendance already marked for this date
             cursor.execute(
-                "SELECT id FROM attendance WHERE student_id = %s AND date = %s",
+                "SELECT student_id FROM attendance WHERE student_id = %s AND date = %s",
                 (student_id, at_date)
             )
             if cursor.fetchone():
@@ -205,9 +238,8 @@ class AttendanceSystem:
             query = "INSERT INTO attendance (student_id, date, status) VALUES (%s, %s, %s)"
             cursor.execute(query, (student_id, at_date, status))
             conn.commit()
-            aid = cursor.lastrowid
-            print(f"Attendance marked id={aid} for student_id={student_id}")
-            return aid
+            print(f"Attendance marked for student_id={student_id} on {at_date}")
+            return (student_id, at_date)
             
         except pymysql.Error as err:
             print(f"Error marking attendance: {err}")
@@ -218,29 +250,29 @@ class AttendanceSystem:
                 cursor.close()
             self.disconnect_db(conn)
 
-    def update_attendance(self, aid, new_status: str):
+    def update_attendance(self, student_id, at_date: date, new_status: str):
         conn = self.connect_db()
         cursor = conn.cursor()
-        query = "UPDATE attendance SET status=%s WHERE id=%s"
-        cursor.execute(query, (new_status, aid))
+        query = "UPDATE attendance SET status=%s WHERE student_id=%s AND date=%s"
+        cursor.execute(query, (new_status, student_id, at_date))
         conn.commit()
-        print(f"Attendance id={aid} updated to {new_status}.")
+        print(f"Attendance updated for student_id={student_id} on {at_date} to {new_status}.")
         cursor.close()
         self.disconnect_db(conn)
 
-    def delete_attendance(self, aid):
+    def delete_attendance(self, student_id, at_date: date):
         conn = self.connect_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM attendance WHERE id=%s", (aid,))
+        cursor.execute("DELETE FROM attendance WHERE student_id=%s AND date=%s", (student_id, at_date))
         conn.commit()
-        print(f"Attendance id={aid} deleted.")
+        print(f"Attendance deleted for student_id={student_id} on {at_date}.")
         cursor.close()
         self.disconnect_db(conn)
 
-    def get_attendance(self, aid):
+    def get_attendance(self, student_id, at_date: date):
         conn = self.connect_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM attendance WHERE id=%s", (aid,))
+        cursor.execute("SELECT * FROM attendance WHERE student_id=%s AND date=%s", (student_id, at_date))
         row = cursor.fetchone()
         cursor.close()
         self.disconnect_db(conn)
@@ -249,7 +281,7 @@ class AttendanceSystem:
     def list_attendance_by_student(self, student_id):
         conn = self.connect_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, date, status FROM attendance WHERE student_id=%s", (student_id,))
+        cursor.execute("SELECT student_id, date, status FROM attendance WHERE student_id=%s", (student_id,))
         rows = cursor.fetchall()
         for r in rows:
             print(r)
@@ -260,7 +292,7 @@ class AttendanceSystem:
     def list_all_attendance(self):
         conn = self.connect_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT a.id, s.roll_no, s.name, a.date, a.status FROM attendance a JOIN students s ON a.student_id=s.id")
+        cursor.execute("SELECT s.id as student_id, s.name, s.class, a.date, a.status FROM attendance a JOIN students s ON a.student_id=s.id")
         rows = cursor.fetchall()
         for r in rows:
             print(r)
