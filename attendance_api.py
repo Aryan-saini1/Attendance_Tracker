@@ -23,13 +23,13 @@ def init_system(max_retries=5):
             test_conn = pymysql.connect(
                 host='localhost',
                 user='root',
-                password='saini',
+                password='hello',
                 connect_timeout=5
             )
             test_conn.close()
             
             # Now initialize our system
-            system = AttendanceSystem(user='root', password='saini')
+            system = AttendanceSystem(user='root', password='hello')
             # Test connection
             conn = system.connect_db()
             if conn:

@@ -10,7 +10,7 @@ class Student:
         return f"Name: {self.name}, Class: {self.student_class}"  
 
 class AttendanceSystem:
-    def __init__(self, host='localhost', port=3306, user='root', password='saini', database='attendance_db', charset='utf8mb4'):
+    def __init__(self, host='localhost', port=3306, user='root', password='hello', database='attendance_db', charset='utf8mb4'):
         self.db_config = {
             'host': host,
             'port': port,
